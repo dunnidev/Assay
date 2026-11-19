@@ -37,6 +37,7 @@ func newStubScanner(t *testing.T, cfg stubConfig) *scan.Scanner {
 
 	horizon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Latest-Ledger", "55678123")
 		switch {
 		case r.URL.Path == "/assets":
 			if cfg.horizonAssetFail {
@@ -392,5 +393,52 @@ func TestScanWithHolderAddsTrustlineCheck(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("trustline check missing from check set %v", rep.CheckSet)
+	}
+}
+
+// TestScanEvidenceCarriesLedgerSequence verifies issue #402:
+// Horizon evidence records carry the ledger sequence reported by Horizon (from headers or root)
+// as metadata outside the preimage, and it serializes into JSON evidence.
+func TestScanEvidenceCarriesLedgerSequence(t *testing.T) {
+	sc := newStubScanner(t, stubConfig{homeDomain: scanHomeDom, holderTrustline: true})
+	rep, err := sc.ScanWithHolder(context.Background(), mustParse(t, "USDC-"+scanIssuer), holderIssuer)
+	if err != nil {
+		t.Fatalf("ScanWithHolder: %v", err)
+	}
+
+	var horizonEvidenceCount int
+	for _, ev := range rep.Evidence {
+		if strings.HasPrefix(ev.Source, "horizon") {
+			horizonEvidenceCount++
+			if ev.LatestLedger != 55678123 {
+				t.Errorf("evidence %s has LatestLedger = %d, want 55678123", ev.Source, ev.LatestLedger)
+			}
+			if ev.LedgerSequence != 55678123 {
+				t.Errorf("evidence %s has LedgerSequence = %d, want 55678123", ev.Source, ev.LedgerSequence)
+			}
+
+			// Verify JSON marshaling includes both field names
+			data, err := json.Marshal(ev)
+			if err != nil {
+				t.Fatalf("json.Marshal(ev): %v", err)
+			}
+			jsonStr := string(data)
+			if !strings.Contains(jsonStr, `"latest_ledger":55678123`) {
+				t.Errorf("JSON evidence missing latest_ledger: %s", jsonStr)
+			}
+			if !strings.Contains(jsonStr, `"ledger_sequence":55678123`) {
+				t.Errorf("JSON evidence missing ledger_sequence: %s", jsonStr)
+			}
+		} else {
+			// Non-Horizon evidence should not carry ledger sequence
+			if ev.LatestLedger != 0 || ev.LedgerSequence != 0 {
+				t.Errorf("non-horizon evidence %s has non-zero ledger sequence: %d / %d",
+					ev.Source, ev.LatestLedger, ev.LedgerSequence)
+			}
+		}
+	}
+
+	if horizonEvidenceCount == 0 {
+		t.Fatal("expected at least one horizon evidence in scan report")
 	}
 }

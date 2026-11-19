@@ -77,11 +77,14 @@ func (c DomainCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 				"asset, so accountability is unverified: it cannot be determined which "+
 				"domain, if either, published a reciprocal claim.",
 			domain, s.Directory.Domain)
+		acctLedger := s.issuerLedger()
 		f.Evidence = append(f.Evidence, Evidence{
-			Source:      "horizon",
-			URL:         horizonAccountURL(s.Asset.Issuer),
-			Claim:       fmt.Sprintf("home_domain %q", domain),
-			RetrievedAt: NewCanonicalTime(s.IssuerFetchedAt),
+			Source:         "horizon",
+			URL:            horizonAccountURL(s.Asset.Issuer),
+			Claim:          fmt.Sprintf("home_domain %q", domain),
+			RetrievedAt:    NewCanonicalTime(s.IssuerFetchedAt),
+			LatestLedger:   acctLedger,
+			LedgerSequence: acctLedger,
 		})
 		f.Evidence = append(f.Evidence, Evidence{
 			Source:      "stellar.expert/directory",

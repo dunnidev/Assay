@@ -309,6 +309,14 @@ components:
           description: >-
             True when the failure is a host-policy refusal: the scanner
             declined to make the request at all.
+        latest_ledger:
+          type: integer
+          description: >-
+            The latest ledger sequence reported by Horizon when answering.
+            Metadata outside the evidence_hash preimage.
+        ledger_sequence:
+          type: integer
+          description: Alias for latest_ledger.
     ClockSkew:
       type: object
       description: >-
@@ -438,6 +446,12 @@ components:
           items:
             type: string
           description: The sorted IDs of the checks the engine actually ran.
+        partial_check_set:
+          type: boolean
+          description: True when the engine ran with a partial check set under AllowPartialCheckSet.
+        allow_partial_check_set:
+          type: boolean
+          description: True when the engine was explicitly permitted to run with a partial check set.
         scanner_bound:
           type: boolean
           description: True when the report binds attest.ScannerIdentity into its preimage.

@@ -81,11 +81,14 @@ func (c CapabilityCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	}
 	f.Mechanics = mech
 
+	assetLedger := s.statLedger()
 	f.Evidence = append(f.Evidence, Evidence{
-		Source:      "horizon",
-		URL:         horizonAssetURL(s.Asset),
-		Claim:       "issuer flags: " + flagSummary(flags),
-		RetrievedAt: NewCanonicalTime(s.StatFetchedAt),
+		Source:         "horizon",
+		URL:            horizonAssetURL(s.Asset),
+		Claim:          "issuer flags: " + flagSummary(flags),
+		RetrievedAt:    NewCanonicalTime(s.StatFetchedAt),
+		LatestLedger:   assetLedger,
+		LedgerSequence: assetLedger,
 	})
 
 	// The second source is cited only when it disagrees. Attaching it to every
@@ -93,11 +96,14 @@ func (c CapabilityCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	// evidence_hash of every attestation already written for an asset whose two
 	// copies agree — which is all of them.
 	if disagreement != "" {
+		acctLedger := s.issuerLedger()
 		f.Evidence = append(f.Evidence, Evidence{
-			Source:      "horizon/account",
-			URL:         horizonAccountURL(s.Asset.Issuer),
-			Claim:       "issuer account flags: " + flagSummary(s.Issuer.Flags),
-			RetrievedAt: NewCanonicalTime(s.IssuerFetchedAt),
+			Source:         "horizon/account",
+			URL:            horizonAccountURL(s.Asset.Issuer),
+			Claim:          "issuer account flags: " + flagSummary(s.Issuer.Flags),
+			RetrievedAt:    NewCanonicalTime(s.IssuerFetchedAt),
+			LatestLedger:   acctLedger,
+			LedgerSequence: acctLedger,
 		})
 	}
 

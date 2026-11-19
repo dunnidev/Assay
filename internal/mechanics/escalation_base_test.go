@@ -39,7 +39,7 @@ func TestBaseSeverityDerivesOnlyFromCapability(t *testing.T) {
 	for _, f := range baseFindings {
 		baseChecks = append(baseChecks, staticCheck{f.Check, f})
 	}
-	engine := &mechanics.Engine{Checks: baseChecks}
+	engine := &mechanics.Engine{Checks: baseChecks, AllowPartialCheckSet: true}
 	rep, err := engine.Run(ctx, sub)
 	if err != nil {
 		t.Fatalf("engine.Run: %v", err)
@@ -60,7 +60,7 @@ func TestBaseSeverityDerivesOnlyFromCapability(t *testing.T) {
 		allChecks = append(allChecks, staticCheck{f.Check, f})
 	}
 
-	engineAll := &mechanics.Engine{Checks: allChecks}
+	engineAll := &mechanics.Engine{Checks: allChecks, AllowPartialCheckSet: true}
 	repAll, err := engineAll.Run(ctx, sub)
 	if err != nil {
 		t.Fatalf("engineAll.Run: %v", err)
@@ -78,7 +78,7 @@ func TestBaseSeverityDerivesOnlyFromCapability(t *testing.T) {
 	for _, f := range escalationFindings {
 		escChecks = append(escChecks, staticCheck{f.Check, f})
 	}
-	engineEsc := &mechanics.Engine{Checks: escChecks}
+	engineEsc := &mechanics.Engine{Checks: escChecks, AllowPartialCheckSet: true}
 	repEsc, err := engineEsc.Run(ctx, sub)
 	if err != nil {
 		t.Fatalf("engineEsc.Run: %v", err)

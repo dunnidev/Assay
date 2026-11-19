@@ -22,13 +22,17 @@ func newTestServer() http.Handler {
 func TestScanRejectsBadInput(t *testing.T) {
 	h := newTestServer()
 
-	for _, tc := range []struct{ name, query string }{
-		{"missing asset", "/api/v1/scan"},
-		{"empty asset", "/api/v1/scan?asset="},
-		{"not an asset", "/api/v1/scan?asset=hello"},
-		{"bad issuer", "/api/v1/scan?asset=USDC-NOPE"},
-		{"invalid max_age_secs", "/api/v1/scan?asset=USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN&max_age_secs=notanumber"},
-		{"negative max_age_secs", "/api/v1/scan?asset=USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN&max_age_secs=-10"},
+	for _, tc := range []struct {
+		name  string
+		query string
+		code  string
+	}{
+		{"missing asset", "/api/v1/scan", "missing_param"},
+		{"empty asset", "/api/v1/scan?asset=", "missing_param"},
+		{"not an asset", "/api/v1/scan?asset=hello", "invalid_asset"},
+		{"bad issuer", "/api/v1/scan?asset=USDC-NOPE", "invalid_asset"},
+		{"invalid max_age_secs", "/api/v1/scan?asset=USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN&max_age_secs=notanumber", "invalid_param"},
+		{"negative max_age_secs", "/api/v1/scan?asset=USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN&max_age_secs=-10", "invalid_param"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -39,12 +43,16 @@ func TestScanRejectsBadInput(t *testing.T) {
 			}
 			var body struct {
 				Error string `json:"error"`
+				Code  string `json:"code"`
 			}
 			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
 			if body.Error == "" {
 				t.Error("error body was empty; a caller must be able to tell why it failed")
+			}
+			if body.Code != tc.code {
+				t.Errorf("code = %q, want %q", body.Code, tc.code)
 			}
 		})
 	}

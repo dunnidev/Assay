@@ -90,6 +90,7 @@ func usage(w io.Writer) {
                                   (CODE-ISSUER or SAC address), bounded by RPC event retention
   assay verify-preimage [-version VERSION] HASH PREIMAGE
                                   compare a stored hash with canonical preimage bytes
+  assay checks                    print every check's ID and description
   assay serve [-addr] [-history PATH]
                                   serve the HTTP API and UI
   assay version                   print scanner identity, preimage encodings
@@ -147,6 +148,8 @@ func runWith(args []string, d commandDeps) error {
 		return runRegistryHistory(args[1:], d)
 	case "verify-preimage":
 		return runVerifyPreimage(args[1:])
+	case "checks":
+		return runChecks(args[1:], d)
 	case "serve":
 		return d.serve(args[1:], log)
 	case "version", "-version", "--version":

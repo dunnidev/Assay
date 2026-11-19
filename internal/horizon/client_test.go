@@ -281,3 +281,76 @@ func (d delayRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 	return resp, nil
 }
+
+func TestLatestLedgerFromHeader(t *testing.T) {
+	const wantSeq = int64(55678123)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Latest-Ledger", "55678123")
+		if strings.Contains(r.URL.Path, "/assets") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(horizonAssets("AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA")))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/accounts/") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(horizonAccount("GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA")))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := horizon.New(srv.URL)
+	stat, err := c.Asset(context.Background(), "AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA")
+	if err != nil {
+		t.Fatalf("Asset: %v", err)
+	}
+	if stat.LatestLedger != wantSeq {
+		t.Errorf("stat.LatestLedger = %d, want %d", stat.LatestLedger, wantSeq)
+	}
+
+	acct, err := c.Account(context.Background(), "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA")
+	if err != nil {
+		t.Fatalf("Account: %v", err)
+	}
+	if acct.LatestLedger != wantSeq {
+		t.Errorf("acct.LatestLedger = %d, want %d", acct.LatestLedger, wantSeq)
+	}
+}
+
+func TestLatestLedgerFromRootFallback(t *testing.T) {
+	const wantSeq = int64(55678123)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"history_latest_ledger":55678123,"core_latest_ledger":55678120}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/assets") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(horizonAssets("AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA")))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := horizon.New(srv.URL)
+	seq, err := c.LatestLedger(context.Background())
+	if err != nil {
+		t.Fatalf("LatestLedger: %v", err)
+	}
+	if seq != wantSeq {
+		t.Errorf("LatestLedger = %d, want %d", seq, wantSeq)
+	}
+
+	stat, err := c.Asset(context.Background(), "AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA")
+	if err != nil {
+		t.Fatalf("Asset: %v", err)
+	}
+	if stat.LatestLedger != wantSeq {
+		t.Errorf("stat.LatestLedger from root fallback = %d, want %d", stat.LatestLedger, wantSeq)
+	}
+}

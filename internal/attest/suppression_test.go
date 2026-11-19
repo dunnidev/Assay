@@ -2,6 +2,7 @@ package attest_test
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 
@@ -30,7 +31,7 @@ func withoutCheck(eng *mechanics.Engine, id string) *mechanics.Engine {
 			checks = append(checks, c)
 		}
 	}
-	return &mechanics.Engine{Checks: checks}
+	return &mechanics.Engine{Checks: checks, AllowPartialCheckSet: true}
 }
 
 func evidenceClaims(rep *mechanics.Report) []string {
@@ -71,9 +72,19 @@ func TestSuppressRemovingReputationChangesTheHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attest full: %v", err)
 	}
-	pReduced, err := attest.FromReport(repReduced)
+
+	// Issue #404: reports from partial engines are refused by FromReport.
+	if _, err := attest.FromReport(repReduced); !errors.Is(err, attest.ErrPartialCheckSet) {
+		t.Fatalf("attest reduced = %v, want ErrPartialCheckSet", err)
+	}
+
+	// To isolate the preimage encoding difference for this test, clear PartialCheckSet.
+	mock := *repReduced
+	mock.PartialCheckSet = false
+	mock.AllowPartialCheckSet = false
+	pReduced, err := attest.FromReport(&mock)
 	if err != nil {
-		t.Fatalf("attest reduced: %v", err)
+		t.Fatalf("attest mock reduced: %v", err)
 	}
 
 	if pFull.EvidenceHash == pReduced.EvidenceHash {
@@ -128,9 +139,19 @@ func TestSuppressCheckThatFoundNothingChangesTheHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attest full: %v", err)
 	}
-	pReduced, err := attest.FromReport(repReduced)
+
+	// Issue #404: reports from partial engines are refused by FromReport.
+	if _, err := attest.FromReport(repReduced); !errors.Is(err, attest.ErrPartialCheckSet) {
+		t.Fatalf("attest reduced = %v, want ErrPartialCheckSet", err)
+	}
+
+	// To isolate the preimage encoding difference for this test, clear PartialCheckSet.
+	mock := *repReduced
+	mock.PartialCheckSet = false
+	mock.AllowPartialCheckSet = false
+	pReduced, err := attest.FromReport(&mock)
 	if err != nil {
-		t.Fatalf("attest reduced: %v", err)
+		t.Fatalf("attest mock reduced: %v", err)
 	}
 	if pFull.EvidenceHash == pReduced.EvidenceHash {
 		t.Fatal("a check that found nothing was invisible in the hash; the preimage does not " +
@@ -214,7 +235,14 @@ func TestSuppressParamsExposeTheCheckSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reduced run: %v", err)
 	}
-	p, err := attest.FromReport(repReduced)
+	if _, err := attest.FromReport(repReduced); !errors.Is(err, attest.ErrPartialCheckSet) {
+		t.Fatalf("attest reduced = %v, want ErrPartialCheckSet", err)
+	}
+
+	mock := *repReduced
+	mock.PartialCheckSet = false
+	mock.AllowPartialCheckSet = false
+	p, err := attest.FromReport(&mock)
 	if err != nil {
 		t.Fatalf("attest: %v", err)
 	}

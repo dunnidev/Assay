@@ -17,7 +17,7 @@ func withoutCheck(eng *mechanics.Engine, id string) *mechanics.Engine {
 			checks = append(checks, c)
 		}
 	}
-	return &mechanics.Engine{Checks: checks}
+	return &mechanics.Engine{Checks: checks, AllowPartialCheckSet: true}
 }
 
 func setHas(set []string, id string) bool {

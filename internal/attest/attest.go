@@ -248,6 +248,10 @@ func CompareVersions(v1, v2 string) int {
 // Contract precedent: AttestationStale is error #2 in the example gate.
 var ErrStale = errors.New("attest: report is stale, so it cannot be attested as fresh")
 
+// ErrPartialCheckSet reports that a report was produced with a partial check
+// set under AllowPartialCheckSet, so it cannot be attested (issue #404).
+var ErrPartialCheckSet = errors.New("attest: report was produced with a partial check set, so it cannot be attested")
+
 // FromReport derives the attest() arguments for a scan report, under the
 // newest encoding the report's bindings select.
 //
@@ -273,6 +277,14 @@ func FromReport(rep *mechanics.Report) (Params, error) {
 func FromReportAs(rep *mechanics.Report, version string) (Params, error) {
 	flags := uint32(rep.Mechanics)
 	sev := uint32(rep.Severity)
+
+	// A report produced with a partial check set is refused outright (issue #404).
+	// Allowing an engine to run with a subset of checks requires explicit opt-in,
+	// but the resulting report cannot be attested on-chain because check suppression
+	// must never be attested as a complete verdict.
+	if rep.PartialCheckSet || rep.AllowPartialCheckSet {
+		return Params{}, fmt.Errorf("%w: report was produced with a partial check set", ErrPartialCheckSet)
+	}
 
 	// The version is validated before any other work so an unknown encoding
 	// fails with its own error rather than after an expensive derivation.

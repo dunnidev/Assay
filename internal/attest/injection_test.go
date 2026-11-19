@@ -68,13 +68,19 @@ func TestDirectoryNameInjectionCannotForgePreimage(t *testing.T) {
 	}
 	// Only the reputation check: the claim under test is the one this check
 	// builds from the hostile directory entry.
-	engine := &mechanics.Engine{Checks: []mechanics.Check{mechanics.ReputationCheck{}}}
+	engine := &mechanics.Engine{
+		Checks:               []mechanics.Check{mechanics.ReputationCheck{}},
+		AllowPartialCheckSet: true,
+	}
 	rep, err := engine.Run(context.Background(), sub)
 	if err != nil {
 		t.Fatalf("run reputation check: %v", err)
 	}
 
-	params, err := attest.FromReport(rep)
+	mock := *rep
+	mock.PartialCheckSet = false
+	mock.AllowPartialCheckSet = false
+	params, err := attest.FromReport(&mock)
 	if err != nil {
 		t.Fatalf("FromReport: %v", err)
 	}
@@ -185,13 +191,19 @@ issuer = "` + issuer + `"
 	}
 	// Only the domain check: the claims under test are the two this check builds
 	// from the hostile document — the reciprocity claim and the attribution.
-	engine := &mechanics.Engine{Checks: []mechanics.Check{mechanics.DomainCheck{}}}
+	engine := &mechanics.Engine{
+		Checks:               []mechanics.Check{mechanics.DomainCheck{}},
+		AllowPartialCheckSet: true,
+	}
 	rep, err := engine.Run(context.Background(), sub)
 	if err != nil {
 		t.Fatalf("run domain check: %v", err)
 	}
 
-	params, err := attest.FromReport(rep)
+	mock := *rep
+	mock.PartialCheckSet = false
+	mock.AllowPartialCheckSet = false
+	params, err := attest.FromReport(&mock)
 	if err != nil {
 		t.Fatalf("FromReport: %v", err)
 	}

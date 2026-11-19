@@ -143,11 +143,14 @@ func TestMutabilityLeavesBaseSeverityUnchanged(t *testing.T) {
 		"doge-noflags-scam":        mechanics.Clear,
 	}
 
-	withoutMutability := &mechanics.Engine{Checks: []mechanics.Check{
-		mechanics.CapabilityCheck{},
-		mechanics.DomainCheck{},
-		mechanics.ReputationCheck{},
-	}}
+	withoutMutability := &mechanics.Engine{
+		Checks: []mechanics.Check{
+			mechanics.CapabilityCheck{},
+			mechanics.DomainCheck{},
+			mechanics.ReputationCheck{},
+		},
+		AllowPartialCheckSet: true,
+	}
 	withMutability := mechanics.NewEngine()
 
 	for _, dir := range fixtureDirs {

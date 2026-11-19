@@ -35,7 +35,7 @@ func (errCheck) Run(context.Context, *mechanics.Subject) (mechanics.Finding, err
 // the rest would read as complete to every consumer — the exact shape of the
 // #23/#25 bugs one level down.
 func TestFailClosedEngineCheckErrorProducesNoReport(t *testing.T) {
-	eng := mechanics.Engine{Checks: []mechanics.Check{errCheck{}}}
+	eng := mechanics.Engine{Checks: []mechanics.Check{errCheck{}}, AllowPartialCheckSet: true}
 	rep, err := eng.Run(context.Background(), subject(nil))
 	if err == nil {
 		t.Fatal("Engine.Run accepted a check error and produced a report")

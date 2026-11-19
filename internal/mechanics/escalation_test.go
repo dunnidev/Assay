@@ -187,7 +187,7 @@ func escalatingSubject(t *testing.T, flags horizon.Flags) *mechanics.Subject {
 // silently masked into the report.
 func TestEngineRejectsEscalationSettingCapabilityBits(t *testing.T) {
 	bugged := buggedEscalationCheck{}
-	eng := mechanics.Engine{Checks: []mechanics.Check{bugged}}
+	eng := mechanics.Engine{Checks: []mechanics.Check{bugged}, AllowPartialCheckSet: true}
 	rep, err := eng.Run(context.Background(), escalatingSubject(t, horizon.Flags{}))
 	if err == nil {
 		t.Fatalf("Engine.Run accepted an escalation finding setting capability bits "+

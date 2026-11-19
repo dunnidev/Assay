@@ -23,6 +23,7 @@ usage:
                                   (CODE-ISSUER or SAC address), bounded by RPC event retention
   assay verify-preimage [-version VERSION] HASH PREIMAGE
                                   compare a stored hash with canonical preimage bytes
+  assay checks                    print every check's ID and description
   assay serve [-addr] [-history PATH]
                                   serve the HTTP API and UI
   assay version                   print scanner identity, preimage encodings
@@ -308,6 +309,24 @@ outcomes:
 - `ENCODING_DIFFERS` — exit 2; the same evidence matches after recomputing
   with an older supported encoding version.
 - Invalid arguments, unsupported versions, or unreadable input — exit 3.
+
+## assay checks
+
+Prints every check's ID and `Describe()` text from the default engine, matching
+the check set bound into v2/v3/v4 preimages.
+
+```
+./assay checks
+```
+
+Output is tab-separated (`ID<TAB>DESCRIPTION`), one check per line:
+
+```
+capability	Maps the issuer's authorization flags to a capability severity: what the issuer can do to a holder's balance. Says nothing about who the issuer is or whether they are likely to use the power.
+mutability	Reports whether the issuer's flag set can still change: locked with no dangerous flags (a durable safety property), locked with freeze or clawback (the power is permanent), or unlocked (the issuer may add freeze or confiscation later, which under CAP-0035 would not reach existing trustlines but would apply to ones opened after the change). Never sets severity: auth_immutable is not a power over holders.
+reputation	Consumes StellarExpert's curated address directory and malicious-domain blocklist, plus any configured SEP-0042 asset list, as attributed evidence. Escalates to critical on a confirmed listing; never lowers severity, and says nothing about an asset that a curated list does not contain.
+sep1-domain	Checks whether the issuer's advertised home_domain publishes a stellar.toml that claims this exact asset. Establishes accountability, not safety: it never raises or lowers severity.
+```
 
 ## assay serve
 

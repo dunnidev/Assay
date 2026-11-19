@@ -61,13 +61,16 @@ func (c TrustlineCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 				"holder-specific answer is unknown.",
 			s.Holder, s.HolderTrustlineErr,
 		)
+		hLedger := s.holderLedger()
 		f.Evidence = append(f.Evidence, Evidence{
 			Source: "horizon",
 			URL:    holderURL,
 			Claim:  "not retrievable: " + s.HolderTrustlineErr,
 			// Fetch failed: attempt time, marked as an attempt.
-			RetrievedAt: NewCanonicalTime(s.HolderAttemptedAt),
-			Attempted:   true,
+			RetrievedAt:    NewCanonicalTime(s.HolderAttemptedAt),
+			Attempted:      true,
+			LatestLedger:   hLedger,
+			LedgerSequence: hLedger,
 		})
 		return f, nil
 	}
@@ -91,6 +94,7 @@ func (c TrustlineCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	}
 	f.Mechanics = mech
 
+	hLedger := s.holderLedger()
 	f.Evidence = append(f.Evidence, Evidence{
 		Source: "horizon",
 		URL:    holderURL,
@@ -98,7 +102,9 @@ func (c TrustlineCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 			"trustline %s-%s: is_clawback_enabled=%t is_authorized=%t",
 			tl.AssetCode, tl.AssetIssuer, tl.IsClawbackEnabled, tl.IsAuthorized,
 		),
-		RetrievedAt: NewCanonicalTime(s.HolderFetchedAt),
+		RetrievedAt:    NewCanonicalTime(s.HolderFetchedAt),
+		LatestLedger:   hLedger,
+		LedgerSequence: hLedger,
 	})
 
 	switch {

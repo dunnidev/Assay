@@ -384,30 +384,36 @@ func TestCheckIdentityChangesTheHash(t *testing.T) {
 	ctx := context.Background()
 	sub := &mechanics.Subject{}
 
-	e2 := &mechanics.Engine{Checks: []mechanics.Check{stubCheck{"a"}, stubCheck{"b"}}}
+	e2 := &mechanics.Engine{Checks: []mechanics.Check{stubCheck{"a"}, stubCheck{"b"}}, AllowPartialCheckSet: true}
 	rep2, _ := e2.Run(ctx, sub)
 	// mock unevaluated/undetermined errors by making them valid
 	rep2.Severity = mechanics.Clear
 	rep2.Base = mechanics.Clear
 	rep2.Mechanics = mechanics.MechAuthRequired
+	rep2.PartialCheckSet = false
+	rep2.AllowPartialCheckSet = false
 	params2, _ := attest.FromReport(rep2)
 
-	e3 := &mechanics.Engine{Checks: []mechanics.Check{stubCheck{"a"}, stubCheck{"b"}, stubCheck{"c"}}}
+	e3 := &mechanics.Engine{Checks: []mechanics.Check{stubCheck{"a"}, stubCheck{"b"}, stubCheck{"c"}}, AllowPartialCheckSet: true}
 	rep3, _ := e3.Run(ctx, sub)
 	rep3.Severity = mechanics.Clear
 	rep3.Base = mechanics.Clear
 	rep3.Mechanics = mechanics.MechAuthRequired
+	rep3.PartialCheckSet = false
+	rep3.AllowPartialCheckSet = false
 	params3, _ := attest.FromReport(rep3)
 
 	if params2.EvidenceHash == params3.EvidenceHash {
 		t.Errorf("a two-check engine and a three-check engine produced the same hash: %s", params2.EvidenceHash)
 	}
 
-	e2Reordered := &mechanics.Engine{Checks: []mechanics.Check{stubCheck{"b"}, stubCheck{"a"}}}
+	e2Reordered := &mechanics.Engine{Checks: []mechanics.Check{stubCheck{"b"}, stubCheck{"a"}}, AllowPartialCheckSet: true}
 	rep2Reordered, _ := e2Reordered.Run(ctx, sub)
 	rep2Reordered.Severity = mechanics.Clear
 	rep2Reordered.Base = mechanics.Clear
 	rep2Reordered.Mechanics = mechanics.MechAuthRequired
+	rep2Reordered.PartialCheckSet = false
+	rep2Reordered.AllowPartialCheckSet = false
 	params2Reordered, _ := attest.FromReport(rep2Reordered)
 
 	if params2.EvidenceHash != params2Reordered.EvidenceHash {

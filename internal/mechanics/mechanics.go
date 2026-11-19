@@ -10,6 +10,8 @@ package mechanics
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -21,6 +23,10 @@ import (
 	"github.com/use-assay/assay/internal/sep1"
 	"github.com/use-assay/assay/internal/stellarexpert"
 )
+
+// ErrPartialCheckSet reports that an engine has a subset of default checks
+// without the required AllowPartialCheckSet option (issue #404).
+var ErrPartialCheckSet = errors.New("mechanics: partial check set requires explicit AllowPartialCheckSet")
 
 // TimeFormat is the one wire format for every time value Assay emits (issue
 // #52): UTC, RFC 3339, whole-second precision (RFC 3339 "Z" form, no
@@ -140,6 +146,33 @@ type Evidence struct {
 	// and must be distinguishable by a program, not only by the wording of
 	// Claim.
 	Refused bool `json:"refused,omitempty"`
+	// LatestLedger is the ledger sequence Horizon reported when answering
+	// (issue #402). Observation time (RetrievedAt) is wall-clock; the ledger
+	// sequence is the ledger's own clock and lets a verifier ask "what did the
+	// ledger say at ledger N" from an archive node.
+	//
+	// It is metadata outside the evidence_hash preimage, matching RequestedURL:
+	// adding it does not change the digest of an otherwise unchanged report.
+	LatestLedger int64 `json:"latest_ledger,omitempty"`
+	// LedgerSequence is an alias for LatestLedger.
+	LedgerSequence int64 `json:"ledger_sequence,omitempty"`
+}
+
+// UnmarshalJSON decodes an Evidence object, ensuring LatestLedger and
+// LedgerSequence remain synchronized if either was emitted in JSON.
+func (e *Evidence) UnmarshalJSON(b []byte) error {
+	type wire Evidence
+	var w wire
+	if err := json.Unmarshal(b, &w); err != nil {
+		return fmt.Errorf("mechanics: unmarshal evidence: %w", err)
+	}
+	*e = Evidence(w)
+	if e.LatestLedger == 0 && e.LedgerSequence > 0 {
+		e.LatestLedger = e.LedgerSequence
+	} else if e.LedgerSequence == 0 && e.LatestLedger > 0 {
+		e.LedgerSequence = e.LatestLedger
+	}
+	return nil
 }
 
 // Finding is one check's result.
@@ -201,9 +234,13 @@ type Subject struct {
 	Stat  *horizon.AssetStat
 	// StatFetchedAt is when Horizon answered the /assets lookup.
 	StatFetchedAt time.Time
-	Issuer        *horizon.Account
+	// StatLedger is the ledger sequence Horizon reported for the /assets query.
+	StatLedger int64
+	Issuer     *horizon.Account
 	// IssuerFetchedAt is when Horizon answered the issuer /accounts lookup.
 	IssuerFetchedAt time.Time
+	// IssuerLedger is the ledger sequence Horizon reported for the /accounts query.
+	IssuerLedger int64
 
 	// Toml is the issuer's stellar.toml if it resolved. TomlErr records why it
 	// did not, and is reported verbatim rather than being smoothed over.
@@ -303,6 +340,8 @@ type Subject struct {
 	// completion time — the source did answer, "not listed".
 	HolderFetchedAt   time.Time
 	HolderAttemptedAt time.Time
+	// HolderLedger is the ledger sequence Horizon reported for the holder trustline query.
+	HolderLedger int64
 
 	// ScannedAt is when the scan started. It is the report-level timestamp:
 	// evidence carries the time of the source it came from, and the report
@@ -397,6 +436,36 @@ func (s *Subject) DomainVerified() bool {
 		return false
 	}
 	return s.Toml.Claims(s.Asset.Code, s.Asset.Issuer)
+}
+
+func (s *Subject) statLedger() int64 {
+	if s.StatLedger > 0 {
+		return s.StatLedger
+	}
+	if s.Stat != nil && s.Stat.LatestLedger > 0 {
+		return s.Stat.LatestLedger
+	}
+	return 0
+}
+
+func (s *Subject) issuerLedger() int64 {
+	if s.IssuerLedger > 0 {
+		return s.IssuerLedger
+	}
+	if s.Issuer != nil && s.Issuer.LatestLedger > 0 {
+		return s.Issuer.LatestLedger
+	}
+	return 0
+}
+
+func (s *Subject) holderLedger() int64 {
+	if s.HolderLedger > 0 {
+		return s.HolderLedger
+	}
+	if s.HolderTrustline != nil && s.HolderTrustline.LatestLedger > 0 {
+		return s.HolderTrustline.LatestLedger
+	}
+	return 0
 }
 
 // Check is a single mechanic classifier. Implementations are pure functions
@@ -502,6 +571,13 @@ type Report struct {
 	// Checks is retained for the legacy evidence preimage encoding.
 	Checks []string `json:"-"`
 
+	// PartialCheckSet reports that the engine ran with a check set smaller than
+	// the default under the explicit AllowPartialCheckSet option (issue #404).
+	// Such reports are refused by attest.FromReport.
+	PartialCheckSet bool `json:"partial_check_set,omitempty"`
+	// AllowPartialCheckSet records that the partial check set was explicitly allowed.
+	AllowPartialCheckSet bool `json:"allow_partial_check_set,omitempty"`
+
 	// ScannerBound opts this report into the v4 preimage encoding, which
 	// adds a `scanner` line naming the code that produced the report
 	// (issue #40). scan.Scanner sets it on every report it produces (#271);
@@ -535,19 +611,65 @@ type Report struct {
 	ScannedAt CanonicalTime `json:"scanned_at"`
 }
 
-// Engine runs a set of checks over a Subject.
-type Engine struct {
-	Checks []Check
+// Option configures an Engine.
+type Option func(*Engine)
+
+// AllowPartialCheckSet explicitly permits an engine to run with a check set
+// smaller than the default or a subset of default checks (issue #404). Reports
+// produced by such an engine will have PartialCheckSet set to true and will be
+// refused by attest.FromReport.
+func AllowPartialCheckSet() Option {
+	return func(e *Engine) {
+		e.AllowPartialCheckSet = true
+	}
 }
 
-// NewEngine returns an Engine with the default check set.
-func NewEngine() *Engine {
-	return &Engine{Checks: []Check{
+// WithChecks configures an Engine with specific checks.
+func WithChecks(checks ...Check) Option {
+	return func(e *Engine) {
+		e.Checks = checks
+	}
+}
+
+// Engine runs a set of checks over a Subject.
+type Engine struct {
+	Checks               []Check
+	AllowPartialCheckSet bool
+}
+
+// defaultCheckIDs lists the stable IDs of the full default check set.
+var defaultCheckIDs = []string{"capability", "mutability", "reputation", "sep1-domain"}
+
+// IsPartialCheckSet reports whether the engine runs a check set smaller than
+// the default or a subset of the default checks (issue #404).
+func (e *Engine) IsPartialCheckSet() bool {
+	if len(e.Checks) < len(defaultCheckIDs) {
+		return true
+	}
+	have := make(map[string]bool, len(e.Checks))
+	for _, c := range e.Checks {
+		have[c.ID()] = true
+	}
+	for _, id := range defaultCheckIDs {
+		if !have[id] {
+			return true
+		}
+	}
+	return false
+}
+
+// NewEngine returns an Engine. With no options, it uses the default check set.
+func NewEngine(opts ...Option) *Engine {
+	e := &Engine{Checks: []Check{
 		CapabilityCheck{},
 		MutabilityCheck{},
 		DomainCheck{},
 		ReputationCheck{},
 	}}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // CheckIDs returns the stable IDs of the checks this engine runs, sorted so
@@ -603,6 +725,14 @@ func (e *Engine) Run(ctx context.Context, s *Subject) (*Report, error) {
 		Evidence:             []Evidence{},
 		UndeterminedChecks:   []string{},
 		UndeterminedBySource: make(map[string]int),
+	}
+
+	if e.IsPartialCheckSet() {
+		if !e.AllowPartialCheckSet {
+			return nil, fmt.Errorf("%w: engine check set is smaller than default without explicit AllowPartialCheckSet", ErrPartialCheckSet)
+		}
+		rep.PartialCheckSet = true
+		rep.AllowPartialCheckSet = true
 	}
 
 	totalChecks := len(e.Checks)

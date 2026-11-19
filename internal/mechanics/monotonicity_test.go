@@ -25,10 +25,14 @@ package mechanics_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
+	"time"
 
+	"github.com/use-assay/assay/internal/horizon"
 	"github.com/use-assay/assay/internal/mechanics"
+	"github.com/use-assay/assay/internal/stellarexpert"
 )
 
 // severityDomain is every severity a finding may carry, in order, including
@@ -85,7 +89,7 @@ func runFindings(t *testing.T, findings []mechanics.Finding) *mechanics.Report {
 	for _, f := range findings {
 		checks = append(checks, fixedCheck{finding: f})
 	}
-	rep, err := (&mechanics.Engine{Checks: checks}).Run(context.Background(), &mechanics.Subject{})
+	rep, err := (&mechanics.Engine{Checks: checks, AllowPartialCheckSet: true}).Run(context.Background(), &mechanics.Subject{})
 	if err != nil {
 		t.Fatalf("Run over generated findings: %v\nfindings: %s", err, describeFindings(findings))
 	}
@@ -254,6 +258,236 @@ func TestSeverityNeverBelowMaximumCapabilityFinding(t *testing.T) {
 			assertMonotonicity(t, findings, rep)
 		}
 	})
+}
+
+// TestRatingNeverChangesSeverityOrAccountability is the property test behind
+// the guardrail for StellarExpert asset signals (#401, follow-up to #6): no
+// rating value published by StellarExpert may ever alter base severity, final
+// severity, or accountability.
+//
+// In particular, a high rating must never soften a confiscation finding (#6),
+// and an adverse or zero rating must never escalate severity or alter
+// accountability on its own.
+func TestRatingNeverChangesSeverityOrAccountability(t *testing.T) {
+	eng := mechanics.NewEngine()
+
+	// boundaryRatings covers typical extremes, 0, maximum scores, negative
+	// numbers, and integer limits.
+	boundaryRatings := []stellarexpert.AssetRating{
+		{}, // all zero
+		{Age: 10, Activity: 10, Trustlines: 10, Liquidity: 10, Volume7d: 10, Interop: 10, Average: 10},        // maximum normal score
+		{Age: 100, Activity: 100, Trustlines: 100, Liquidity: 100, Volume7d: 100, Interop: 100, Average: 100}, // 100 score
+		{Age: 0, Activity: 0, Trustlines: 0, Liquidity: 0, Volume7d: 0, Interop: 0, Average: 10},              // zero components, high average
+		{Age: 10, Activity: 10, Trustlines: 10, Liquidity: 10, Volume7d: 10, Interop: 10, Average: 0},         // high components, zero average
+		{Age: -1, Activity: -1, Trustlines: -1, Liquidity: -1, Volume7d: -1, Interop: -1, Average: -1},        // negative rating
+		{Age: math.MaxInt32, Activity: math.MaxInt32, Trustlines: math.MaxInt32, Liquidity: math.MaxInt32, Volume7d: math.MaxInt32, Interop: math.MaxInt32, Average: math.MaxInt32},
+		{Age: math.MinInt32, Activity: math.MinInt32, Trustlines: math.MinInt32, Liquidity: math.MinInt32, Volume7d: math.MinInt32, Interop: math.MinInt32, Average: math.MinInt32},
+		{Age: math.MaxInt, Activity: math.MaxInt, Trustlines: math.MaxInt, Liquidity: math.MaxInt, Volume7d: math.MaxInt, Interop: math.MaxInt, Average: math.MaxInt},
+		{Age: math.MinInt, Activity: math.MinInt, Trustlines: math.MinInt, Liquidity: math.MinInt, Volume7d: math.MinInt, Interop: math.MinInt, Average: math.MinInt},
+	}
+
+	t.Run("boundaries/corpus", func(t *testing.T) {
+		for _, tc := range corpus(t) {
+			s := loadSubject(t, tc.Dir)
+			s.ExpertAsset = nil
+			s.ExpertAssetErr = ""
+			baseline, err := eng.Run(context.Background(), s)
+			if err != nil {
+				t.Fatalf("load baseline %s: %v", tc.Dir, err)
+			}
+			for _, rating := range boundaryRatings {
+				assertRatingInvariance(t, eng, s, baseline, rating)
+			}
+		}
+	})
+
+	t.Run("boundaries/synthetic", func(t *testing.T) {
+		for _, s := range syntheticRatingSubjects() {
+			s.ExpertAsset = nil
+			s.ExpertAssetErr = ""
+			baseline, err := eng.Run(context.Background(), s)
+			if err != nil {
+				t.Fatalf("synthetic baseline %s: %v", s.Asset, err)
+			}
+			for _, rating := range boundaryRatings {
+				assertRatingInvariance(t, eng, s, baseline, rating)
+			}
+		}
+	})
+
+	t.Run("generated/ratings", func(t *testing.T) {
+		// Fixed seed: failures reproduce deterministically.
+		rng := rand.New(rand.NewSource(0x401_2026))
+
+		// Include corpus fixtures (specifically confiscation fixtures
+		// usdc-revocable-regulated and usdz-clawback-regulated) and synthetic cases.
+		var subjects []*mechanics.Subject
+		for _, tc := range corpus(t) {
+			subjects = append(subjects, loadSubject(t, tc.Dir))
+		}
+		subjects = append(subjects, syntheticRatingSubjects()...)
+
+		for _, s := range subjects {
+			s.ExpertAsset = nil
+			s.ExpertAssetErr = ""
+			baseline, err := eng.Run(context.Background(), s)
+			if err != nil {
+				t.Fatalf("baseline %s: %v", s.Asset, err)
+			}
+
+			// Generate a wide variety of pseudo-random ratings.
+			for i := 0; i < 200; i++ {
+				rating := generatedRating(rng)
+				assertRatingInvariance(t, eng, s, baseline, rating)
+			}
+		}
+	})
+}
+
+// assertRatingInvariance states the invariant: no rating value may change base
+// severity, final severity, or accountability.
+func assertRatingInvariance(t *testing.T, eng *mechanics.Engine, s *mechanics.Subject, baseline *mechanics.Report, rating stellarexpert.AssetRating) {
+	t.Helper()
+
+	s.ExpertAsset = &stellarexpert.Asset{
+		Asset:      s.Asset.String(),
+		Code:       s.Asset.Code,
+		Issuer:     s.Asset.Issuer,
+		Supply:     "3675875656477148",
+		Trustlines: stellarexpert.TrustlineCounts{Total: 2431888, Authorized: 2431888, Funded: 703330},
+		Rating:     rating,
+	}
+	s.ExpertAssetURL = "https://api.stellar.expert/explorer/public/asset/" + s.Asset.String()
+	s.ExpertAssetFetchedAt = s.ScannedAt
+	s.ExpertAssetErr = ""
+
+	rep, err := eng.Run(context.Background(), s)
+	if err != nil {
+		t.Fatalf("subject %s: Engine.Run failed with rating %+v: %v", s.Asset, rating, err)
+	}
+
+	if rep.Base != baseline.Base {
+		t.Errorf("subject %s: rating %+v moved base severity from %v to %v (ratings must never soften or harden capability base)",
+			s.Asset, rating, baseline.Base, rep.Base)
+	}
+	if rep.Severity != baseline.Severity {
+		t.Errorf("subject %s: rating %+v moved final severity from %v to %v (ratings must never soften or escalate severity)",
+			s.Asset, rating, baseline.Severity, rep.Severity)
+	}
+	if rep.Accountability != baseline.Accountability {
+		t.Errorf("subject %s: rating %+v moved accountability from %v to %v (ratings must never alter accountability)",
+			s.Asset, rating, baseline.Accountability, rep.Accountability)
+	}
+	if rep.Escalated != baseline.Escalated {
+		t.Errorf("subject %s: rating %+v moved escalated flag from %v to %v",
+			s.Asset, rating, baseline.Escalated, rep.Escalated)
+	}
+
+	// Also verify ReputationCheck directly: rating must not alter finding severity or set accountability.
+	f, err := mechanics.ReputationCheck{}.Run(context.Background(), s)
+	if err != nil {
+		t.Fatalf("subject %s: ReputationCheck.Run failed with rating %+v: %v", s.Asset, rating, err)
+	}
+	if f.Accountability != nil {
+		t.Errorf("subject %s: rating %+v caused ReputationCheck to set accountability to %v",
+			s.Asset, rating, *f.Accountability)
+	}
+}
+
+// generatedRating produces a pseudo-random AssetRating covering typical,
+// boundary, negative, and extreme integer values.
+func generatedRating(rng *rand.Rand) stellarexpert.AssetRating {
+	genInt := func() int {
+		switch rng.Intn(6) {
+		case 0:
+			return rng.Intn(11) // 0..10
+		case 1:
+			return rng.Intn(101) // 0..100
+		case 2:
+			return rng.Intn(1_000_000)
+		case 3:
+			return -(1 + rng.Intn(1000))
+		case 4:
+			boundaries := []int{0, 1, 10, 100, math.MinInt32, math.MaxInt32, math.MinInt, math.MaxInt}
+			return boundaries[rng.Intn(len(boundaries))]
+		default:
+			return rng.Int()
+		}
+	}
+
+	return stellarexpert.AssetRating{
+		Age:        genInt(),
+		Activity:   genInt(),
+		Trustlines: genInt(),
+		Liquidity:  genInt(),
+		Volume7d:   genInt(),
+		Interop:    genInt(),
+		Average:    genInt(),
+	}
+}
+
+// syntheticRatingSubjects constructs test subjects covering capability
+// findings (confiscation flags), clear capability, adverse reputation, and combinations.
+func syntheticRatingSubjects() []*mechanics.Subject {
+	const synthIssuer = "GA22IDJNHUMC3XKUCCBFNTQIJOUBWINC5GCXHLJ2V6KZ3OWAXCULNQ7P"
+	scanned := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	return []*mechanics.Subject{
+		// 1. Confiscation finding: auth_revocable flag (Medium base severity)
+		{
+			Asset: mechanics.Asset{Code: "USDC", Issuer: synthIssuer},
+			Stat: &horizon.AssetStat{
+				AssetCode: "USDC", AssetIssuer: synthIssuer,
+				Flags: horizon.Flags{AuthRevocable: true},
+			},
+			Issuer: &horizon.Account{
+				AccountID: synthIssuer,
+				Flags:     horizon.Flags{AuthRevocable: true},
+			},
+			ScannedAt: scanned,
+		},
+		// 2. Confiscation finding: clawback_enabled flag (High base severity)
+		{
+			Asset: mechanics.Asset{Code: "USDZ", Issuer: synthIssuer},
+			Stat: &horizon.AssetStat{
+				AssetCode: "USDZ", AssetIssuer: synthIssuer,
+				Flags: horizon.Flags{AuthClawbackEnabled: true},
+			},
+			Issuer: &horizon.Account{
+				AccountID: synthIssuer,
+				Flags:     horizon.Flags{AuthClawbackEnabled: true},
+			},
+			ScannedAt: scanned,
+		},
+		// 3. Clear asset: no flags (Clear base severity)
+		{
+			Asset:     mechanics.Asset{Code: "AQUA", Issuer: synthIssuer},
+			Stat:      &horizon.AssetStat{AssetCode: "AQUA", AssetIssuer: synthIssuer},
+			Issuer:    &horizon.Account{AccountID: synthIssuer},
+			ScannedAt: scanned,
+		},
+		// 4. Escalated asset: adverse directory tag (Clear base, Critical final severity)
+		{
+			Asset:     mechanics.Asset{Code: "DOGE", Issuer: synthIssuer},
+			Stat:      &horizon.AssetStat{AssetCode: "DOGE", AssetIssuer: synthIssuer},
+			Issuer:    &horizon.Account{AccountID: synthIssuer},
+			Directory: &stellarexpert.DirectoryEntry{Address: synthIssuer, Tags: []string{"malicious"}},
+			ScannedAt: scanned,
+		},
+		// 5. Confiscation + Escalation: clawback and adverse tag (High base, Critical final severity)
+		{
+			Asset: mechanics.Asset{Code: "SCAM", Issuer: synthIssuer},
+			Stat: &horizon.AssetStat{
+				AssetCode: "SCAM", AssetIssuer: synthIssuer,
+				Flags: horizon.Flags{AuthClawbackEnabled: true},
+			},
+			Issuer: &horizon.Account{
+				AccountID: synthIssuer,
+				Flags:     horizon.Flags{AuthClawbackEnabled: true},
+			},
+			Directory: &stellarexpert.DirectoryEntry{Address: synthIssuer, Tags: []string{"malicious"}},
+			ScannedAt: scanned,
+		},
+	}
 }
 
 // generatedFindings builds a random set of findings: mixed severities, a

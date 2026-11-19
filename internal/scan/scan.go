@@ -390,6 +390,9 @@ func (s *Scanner) Subject(ctx context.Context, a mechanics.Asset) (*mechanics.Su
 	// honest if the times were recorded per source, not reused from the scan
 	// start.
 	sub.StatFetchedAt = s.now()
+	if stat != nil {
+		sub.StatLedger = stat.LatestLedger
+	}
 
 	acctCtx, cancelAcct := context.WithTimeout(ctx, timeout)
 	issuer, err := s.Horizon.Account(acctCtx, a.Issuer)
@@ -399,6 +402,9 @@ func (s *Scanner) Subject(ctx context.Context, a mechanics.Asset) (*mechanics.Su
 	}
 	sub.Issuer = issuer
 	sub.IssuerFetchedAt = s.now()
+	if issuer != nil {
+		sub.IssuerLedger = issuer.LatestLedger
+	}
 
 	var (
 		wg sync.WaitGroup
@@ -694,6 +700,9 @@ func (s *Scanner) SubjectWithHolder(ctx context.Context, a mechanics.Asset, hold
 	} else {
 		sub.HolderTrustline = tl
 		sub.HolderFetchedAt = s.now()
+		if tl != nil {
+			sub.HolderLedger = tl.LatestLedger
+		}
 	}
 	return sub, nil
 }
@@ -710,7 +719,10 @@ func (s *Scanner) ScanWithHolder(ctx context.Context, a mechanics.Asset, holder 
 	}
 	eng := s.Engine
 	if holder != "" {
-		eng = &mechanics.Engine{Checks: append([]mechanics.Check{}, s.Engine.Checks...)}
+		eng = &mechanics.Engine{
+			Checks:               append([]mechanics.Check{}, s.Engine.Checks...),
+			AllowPartialCheckSet: s.Engine.AllowPartialCheckSet,
+		}
 		eng.Checks = append(eng.Checks, mechanics.TrustlineCheck{})
 	}
 	rep, err := bindScanner(eng.Run(ctx, sub))

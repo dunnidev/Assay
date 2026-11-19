@@ -63,8 +63,10 @@ func LoadSubject(fixturesDir, dir string) (*mechanics.Subject, error) {
 		Asset:           mechanics.Asset{Code: stat.AssetCode, Issuer: stat.AssetIssuer},
 		Stat:            &stat,
 		StatFetchedAt:   fixtureTime,
+		StatLedger:      stat.LatestLedger,
 		Issuer:          &acct,
 		IssuerFetchedAt: fixtureTime,
+		IssuerLedger:    acct.LatestLedger,
 		ScannedAt:       fixtureTime,
 	}
 

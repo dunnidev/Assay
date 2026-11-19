@@ -97,6 +97,16 @@ func TestDispatch(t *testing.T) {
 		}
 	})
 
+	t.Run("checks", func(t *testing.T) {
+		d, out, _, _ := deps(nil, nil)
+		if err := runWith([]string{"checks"}, d); err != nil {
+			t.Fatalf("checks: %v", err)
+		}
+		if !strings.Contains(out.String(), "capability") {
+			t.Errorf("checks output missing capability: %q", out.String())
+		}
+	})
+
 	t.Run("serve", func(t *testing.T) {
 		d, _, _, serveArgs := deps(testReport(), nil)
 		if err := runWith([]string{"serve", "-addr", ":9999"}, d); err != nil {

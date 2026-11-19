@@ -172,7 +172,7 @@ func TestTrustlineDoesNotAffectReportSeverity(t *testing.T) {
 		IsAuthorized: true, IsClawbackEnabled: true,
 	}
 	s := tlSubject(tlTestHolder, tl, "")
-	eng := &mechanics.Engine{Checks: []mechanics.Check{mechanics.TrustlineCheck{}}}
+	eng := &mechanics.Engine{Checks: []mechanics.Check{mechanics.TrustlineCheck{}}, AllowPartialCheckSet: true}
 	rep, err := eng.Run(context.Background(), s)
 	if err != nil {
 		t.Fatalf("engine.Run: %v", err)
