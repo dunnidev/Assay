@@ -54,10 +54,24 @@ paths:
             account ID), or an asset identifier naming the
             network's native asset (native/XLM), which has no issuer and no
             authorization flags and is therefore never scanned or attested.
+            Codes: missing_asset, invalid_asset, invalid_holder,
+            invalid_parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
-          description: Asset not found on the ledger.
+          description: Asset not found on the ledger. Code: asset_not_found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '502':
-          description: Upstream scan failure.
+          description: Upstream scan failure. Code: upstream_unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/history:
     get:
       summary: Read an asset's recorded observations and derived transitions
@@ -80,7 +94,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/History'
         '400':
-          description: Missing or invalid asset, or the network's native asset.
+          description: >-
+            Missing or invalid asset, or the network's native asset.
+            Codes: missing_asset, invalid_asset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/exposure:
     get:
       summary: List trustlines held by an account with per-asset severity and trustline finding
@@ -121,13 +141,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/Exposure'
         '400':
-          description: Missing or invalid account, limit, or cursor.
+          description: >-
+            Missing or invalid account, limit, or cursor.
+            Codes: missing_account, invalid_account, invalid_parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
-          description: Account not found on the ledger.
+          description: Account not found on the ledger. Code: account_not_found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
-          description: Rate limited. Retry-After header gives seconds to wait.
+          description: >-
+            Rate limited. Retry-After header gives seconds to wait.
+            Code: rate_limited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '502':
-          description: The account's trustline list could not be fetched.
+          description: >-
+            The account's trustline list could not be fetched.
+            Code: upstream_unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /metrics:
     get:
       summary: Scan outcome and per-source failure counters
@@ -182,6 +224,33 @@ paths:
                 type: string
 components:
   schemas:
+    Error:
+      type: object
+      description: >-
+        Error body returned with every non-2xx response from /api/v1/*.
+        Consumers must branch on `code`, never on the human-readable `error`
+        string; `error` may change, `code` is stable across releases.
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+        code:
+          type: string
+          description: >-
+            Machine-readable error code, stable across releases. See
+            docs/api.md for the full set.
+          enum:
+            - missing_asset
+            - invalid_asset
+            - invalid_holder
+            - invalid_parameter
+            - missing_account
+            - invalid_account
+            - asset_not_found
+            - account_not_found
+            - upstream_unavailable
+            - rate_limited
     Severity:
       type: string
       description: >-

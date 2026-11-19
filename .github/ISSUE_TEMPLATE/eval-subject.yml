@@ -1,0 +1,104 @@
+name: Eval subject proposal
+description: Propose a new asset for the labelled evaluation set.
+labels: ["area:data", "Stellar Wave"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Every subject must prove a distinct judgment boundary — it is not in
+        the set for the asset's reputation but for what its captured evidence
+        proves about the classifier. A proposal without all three parts of
+        evidence (asset, source records, and counter-example) is incomplete.
+
+
+        Label criteria are in
+        [docs/eval.md](https://github.com/use-assay/Assay/blob/main/docs/eval.md#dataset-labeling-and-refresh).
+
+  - type: input
+    id: asset
+    attributes:
+      label: Asset identifier
+      description: >-
+        CODE-ISSUER, e.g.
+        USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN.
+        A credit asset only; the native asset cannot be scanned or attested.
+      placeholder: "CODE-GISSUER..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: What the subject proves
+      description: >-
+        State the judgment boundary this subject pins. "It is a scam" is not
+        sufficient — name the classifier behaviour it would force: e.g.
+        "proves the mutability check does not over-flag when auth_immutable
+        is set by a legitimate issuer". The why is printed on eval failure so
+        a future maintainer knows what they broke.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: label
+    attributes:
+      label: Proposed label
+      description: >-
+        **Legitimate** — documented issuer identity or compliance use case.
+        **Legitimate (uses flags)** — legitimate but carries auth_revocable
+        or auth_clawback_enabled. **Trap** — affirmative reputation evidence
+        of malicious or unsafe issuer; capability alone never qualifies.
+        **Degraded** — captured while a required source was unavailable;
+        neither legitimate nor trap.
+      options:
+        - legitimate
+        - "legitimate (uses flags)"
+        - trap
+        - degraded
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Captured evidence supporting the label
+      description: >-
+        Cite the source records that justify the label.
+
+
+        **Legitimate**: the domain claiming the asset, the SEP-1 field that
+        claims it, and any regulatory or directory evidence.
+
+
+        **Legitimate (uses flags)**: as above, plus why the flag use is
+        compliant (e.g. regulated stablecoin with FSCA / FinCEN licence, or
+        documented freeze-and-recover policy).
+
+
+        **Trap**: the affirmative reputation record — StellarExpert tag,
+        blocklist entry, or documented impersonation case — with its URL and
+        capture date. Capability alone (e.g. auth_revocable is set) never
+        justifies this label.
+
+
+        **Degraded**: which source was unreachable and what error it
+        returned; include the error marker text that would go in
+        directory.err or blocked.err.
+    validations:
+      required: true
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Source URLs
+      description: >-
+        One URL per line: the stellar.toml location, the Horizon account
+        endpoint, the StellarExpert directory URL, and any other source
+        consulted. These become the metadata.json entries and must be
+        reachable so a re-capture can verify provenance.
+      placeholder: |
+        https://example.com/.well-known/stellar.toml
+        https://horizon.stellar.org/accounts/G...
+        https://api.stellar.expert/explorer/public/asset/CODE-G...
+    validations:
+      required: true
